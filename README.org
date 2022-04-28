@@ -1,0 +1,28 @@
+* Ideas
+*** exact plan of where to use statistics to analyze data
+*** have basic script to query bpf loader for interactions
+*** figure out gathering statistics on bpf loader
+
+regression so that i see how often a smart contract is called, correlated that with discrete solana eventsQQ
+github accounts, see what other solana events they enter
+see what other ecosystems they develop in
+see how long they develop
+see how many projs they develop
+
+
+
+
+count how many progs deployed per day, check after event, and check that diff
+
+intervention analysis, model impact of event (permanent effects), just do anova test
+
+
+
+
+with github data, can do regression
+
+
+can see productivity
+
+
+how do i measure developoor activity: developer frequency
