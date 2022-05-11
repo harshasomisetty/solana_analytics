@@ -2,3 +2,7 @@ node_modules
 *.log*
 
 yarn.lock
+/.DS_Store
+/chain_metrics/devnet/
+/chain_metrics/mainnet-beta/
+/chain_metrics/package-lock.json
