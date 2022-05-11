@@ -1,3 +1,7 @@
+* Introduction
+This project is for Solana labs, and intends to study the impact of Hackerhouses on developer activity on solana.
+
+The chain metrics folder first investigates onchain interactions with BPFLoader (which represents a new program deployment or upgrade) by downloading all transactions including the loader program, then does a intervention analysis (statistical test) to see if the mean developer activity has significantly changed after hackerhouses.
 * Ideas
 *** exact plan of where to use statistics to analyze data
 *** have basic script to query bpf loader for interactions
