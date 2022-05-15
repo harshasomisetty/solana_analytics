@@ -64,9 +64,14 @@ async function transferFile(con_string) {
   // fs.writeFileSync(interactionFile1,);
   // fs.closeSync(fs.openSync(interactionFile1, "a"));
   fs.writeFileSync(interactionFile1, JSON.stringify(lastRecord));
+  console.log("Starting new file");
 }
 
-let con_string = "devnet";
+async function totalFunction() {
+  let con_string = "devnet";
 
-// transferFile(con_string);
-queryAccount(con_string);
+  transferFile(con_string);
+  queryAccount(con_string);
+}
+
+totalFunction();
