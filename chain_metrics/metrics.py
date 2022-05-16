@@ -4,11 +4,10 @@ import matplotlib.pyplot as plt
 import os
 from natsort import natsorted
 
-connection_string = "devnet/"
+connection_string = "devnet2/"
 # connection_string = "mainnet-beta/"
 
 file_num = 1
-interactionFile = connection_string + "BPFInteraction" + str(file_num) + ".json";
 
 def get_df(timeFrame = "D"):
 
@@ -16,6 +15,7 @@ def get_df(timeFrame = "D"):
     for file in natsorted(os.listdir(connection_string)):
         print(file)
         df = pd.read_json(connection_string+file)
+        # print(df)
         df.index = pd.to_datetime(df["blockTime"], unit='s')
         df['Amount'] = 1
         bucket_df = df.resample("D").Amount.sum().sort_index()
@@ -43,7 +43,7 @@ def plot_data():
 
 def export_data():
     final_df = get_df("D")
-    final_df.to_csv("timedata.csv")
+    final_df.to_csv("timedata2.csv")
 
 
 if __name__ == "__main__":
