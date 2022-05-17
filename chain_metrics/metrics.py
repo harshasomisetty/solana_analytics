@@ -13,11 +13,24 @@ def get_df(timeFrame = "D"):
 
     final_df = pd.DataFrame()
     for file in natsorted(os.listdir(connection_string)):
-        print(file)
         df = pd.read_json(connection_string+file)
-        # print(df)
-        df.index = pd.to_datetime(df["blockTime"], unit='s')
+        if df.empty:
+            continue
+        print(file)
+
+        timestamp = df["blockTime"]
+        
+        tstamp = pd.to_datetime(timestamp, unit='s')
+        # print("zero", tstamp)
+        tstamp = tstamp.dt.tz_localize('UTC')
+        # print("first", tstamp)
+        tstamp = tstamp.dt.tz_convert('US/Central')
+        # print("second", tstamp)
+        # print("\nTSTAMP\n",tstamp.dt.date, "\n\n")
+        df.index = tstamp
         df['Amount'] = 1
+
+        # print("\nFINAL DF\n", df, "\n")
         bucket_df = df.resample("D").Amount.sum().sort_index()
 
         print("Bucket\n", bucket_df)

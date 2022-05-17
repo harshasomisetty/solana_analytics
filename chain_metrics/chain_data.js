@@ -67,17 +67,11 @@ async function transferFile(con_string) {
   console.log("Starting new file");
 }
 
-function actualTime(date) {
-  return new Date(date.getTime() + date.getTimezoneOffset() * 60 * 1000);
-}
-
 function dateFormat(date) {
   console.log("in method", date, date.getTimezoneOffset());
-  date = actualTime(date);
-  console.log("new in method", date);
   let year = date.getFullYear();
   let month = (date.getMonth() + 1).toString().padStart(2, "0");
-  let day = (date.getDate() + 1).toString().padStart(2, "0");
+  let day = date.getDate().toString().padStart(2, "0");
   return "devnet2/" + month + day + year + ".json";
 }
 
@@ -94,45 +88,23 @@ function printStartEndDf(signatures) {
   }
 }
 
-function utcTime(date) {
-  return new Date(date - date.getTimezoneOffset() * 60 * 1000);
-}
-
 function seperateFiles(dir_string) {
   let filenames = orderBy(fs.readdirSync(dir_string));
-  for (const rawname of filenames.slice(0, 2)) {
+  for (const rawname of filenames.slice(0, 3)) {
     let name = "devnet/" + rawname;
     let signatures = JSON.parse(fs.readFileSync(name, "utf-8"));
 
-    let firstsig = new Date(signatures[0]["blockTime"] * 1000);
-    console.log(
-      "firtst sig start",
-      firstsig,
-      firstsig.getTime(),
-      firstsig.getTimezoneOffset()
+    let latestDate = new Date(signatures[0]["blockTime"] * 1000);
+
+    let latestDay = new Date(
+      latestDate.getFullYear(),
+      latestDate.getMonth(),
+      latestDate.getDate()
     );
 
-    let latestDate = utcTime(new Date(signatures[0]["blockTime"] * 1000));
-    let latestDay = utcTime(
-      new Date(
-        latestDate.getFullYear(),
-        latestDate.getMonth(),
-        latestDate.getDate()
-      )
-    );
+    console.log("latest date start", latestDate, latestDate.getTime());
 
-    console.log(
-      "latest date start",
-      latestDate,
-      latestDate.getTime(),
-      latestDate.getTimezoneOffset()
-    );
-    console.log(
-      "latest day start",
-      latestDay,
-      latestDay.getTime(),
-      latestDay.getTimezoneOffset()
-    );
+    console.log("latest day start", latestDay, latestDay.getTime());
 
     let dstring = dateFormat(latestDay);
     console.log("latest file", dstring);
@@ -140,37 +112,41 @@ function seperateFiles(dir_string) {
       console.log("not exists");
       fs.writeFileSync(dstring, JSON.stringify([]));
     } else {
-      console.log("already exists!!!!!!!!");
+      console.log("already exists!!");
     }
 
     let daySignatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
     printStartEndDf(daySignatures);
     let startIndex = 0;
 
+    console.log("\n\nSTARTING LOOP\n\n");
     for (let i = 0; i < signatures.length; i++) {
       let sig = signatures[i];
 
       let curDate = new Date(sig["blockTime"] * 1000);
       if (curDate.getTime() < latestDay.getTime()) {
-        console.log("breaking", curDate, i);
+        console.log("breaking", curDate);
         console.log("append these:", startIndex, i);
         daySignatures = daySignatures.concat(signatures.slice(startIndex, i));
         fs.writeFileSync(dstring, JSON.stringify(daySignatures));
 
-        latestDay = utcTime(
-          new Date(curDate.getFullYear(), curDate.getMonth(), curDate.getDate())
+        latestDay = new Date(
+          curDate.getFullYear(),
+          curDate.getMonth(),
+          curDate.getDate()
         );
-
-        console.log("latestDat", latestDay.getTime());
-        console.log("offset", latestDate.getTimezoneOffset() * 60000);
 
         dstring = dateFormat(latestDay);
         if (!fs.existsSync(dstring)) {
           console.log("not exists");
           fs.writeFileSync(dstring, JSON.stringify([]));
         }
+
+        printStartEndDf(daySignatures);
+
         daySignatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
         startIndex = i;
+        console.log("new day, dstring", latestDay, dstring, "***\n\n\n");
       }
     }
 
@@ -184,7 +160,7 @@ function seperateFiles(dir_string) {
 
 async function readFile(dir_string) {
   let filenames = fs.readdirSync(dir_string).reverse();
-  let dstring = dir_string + "/" + filenames[1];
+  let dstring = dir_string + "/" + filenames[0];
   console.log("reading file", dstring);
   let signatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
   printStartEndDf(signatures);
@@ -192,8 +168,8 @@ async function readFile(dir_string) {
 async function totalFunction() {
   let con_string = "devnet";
 
-  // seperateFiles(con_string);
-  readFile("devnet2");
+  seperateFiles(con_string);
+  // readFile("devnet2");
   // transferFile(con_string);
   // queryAccount(con_string);
 }

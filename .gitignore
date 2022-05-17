@@ -6,3 +6,4 @@ yarn.lock
 /chain_metrics/devnet/
 /chain_metrics/mainnet-beta/
 /chain_metrics/package-lock.json
+/chain_metrics/.DS_Store
