@@ -5,7 +5,11 @@
   "license": "MIT",
   "dependencies": {
     "@solana/web3.js": "^1.41.1",
-    "natural-orderby": "^2.0.3"
+    "bluebird": "^3.7.2",
+    "natural-orderby": "^2.0.3",
+    "pg": "^8.7.3",
+    "pg-pool": "^3.5.1",
+    "pg-promise": "^10.11.1"
   },
   "type": "module"
 }

@@ -90,7 +90,7 @@ function printStartEndDf(signatures) {
 
 function seperateFiles(dir_string) {
   let filenames = orderBy(fs.readdirSync(dir_string));
-  for (const rawname of filenames.slice(0, 3)) {
+  for (const rawname of filenames.slice(0, 2)) {
     let name = "devnet/" + rawname;
     let signatures = JSON.parse(fs.readFileSync(name, "utf-8"));
 
@@ -160,11 +160,12 @@ function seperateFiles(dir_string) {
 
 async function readFile(dir_string) {
   let filenames = fs.readdirSync(dir_string).reverse();
-  let dstring = dir_string + "/" + filenames[0];
+  let dstring = dir_string + "/" + filenames[5];
   console.log("reading file", dstring);
   let signatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
   printStartEndDf(signatures);
 }
+
 async function totalFunction() {
   let con_string = "devnet";
 

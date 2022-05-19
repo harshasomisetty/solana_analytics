@@ -53,6 +53,7 @@ def plot_data():
     plt.ylabel('Interaction Count')
     plt.xlabel('Dates')
     plt.show()
+    final_df.to_csv("plotdata.csv")
 
 def export_data():
     final_df = get_df("D")
@@ -60,7 +61,8 @@ def export_data():
 
 
 if __name__ == "__main__":
-    export_data()
+    plot_data()
+    # export_data()
 
 
 
