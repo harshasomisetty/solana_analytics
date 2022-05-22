@@ -2,7 +2,8 @@ import {createRequire} from "module";
 import {Connection, PublicKey, clusterApiUrl} from "@solana/web3.js";
 import * as fs from "fs";
 import {orderBy} from "natural-orderby";
-
+import request from "request";
+import axios from "axios";
 let bpfPubkey = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
 const require = createRequire(import.meta.url);
@@ -198,5 +199,79 @@ async function reloadDatabase() {
   // await convertData();
 }
 
+async function sampleTx() {
+  // let query = await db.query("select * from devnet_data limit 300", [true]);
+  let query = await db.query(
+    "select * from devnet_data tablesample bernoulli(.0006)",
+    [true]
+  );
+  let sigs = query.map((e) => e.signature);
+  // console.log(sigs);
+  return sigs;
+}
+async function queryStatistics() {
+  let net = "devnet";
+  let url = "https://api." + net + ".solana.com ";
+
+  let txs = await sampleTx();
+  // console.log("number of tx", txs.length);
+  let res_data = txs.map((e) => {
+    return {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getTransaction",
+      params: [e, "json"],
+    };
+  });
+  // console.log(data);
+
+  let res = await axios.post(url, res_data);
+  let data = res.data;
+  // console.log(res.data[0]);
+  let upgrades = 0;
+  data.forEach((e, ind) => {
+    let meta = e.result.meta;
+    if (meta.hasOwnProperty("logMessages") && meta.logMessages.length > 0) {
+      if (
+        meta.logMessages.find((element) => {
+          if (element.includes("Upgraded program")) {
+            return true;
+          }
+        })
+      ) {
+        // console.log(ind);
+        // console.log(meta.logMessages);
+        // console.log(e.result.transaction.signatures[0]);
+        upgrades += 1;
+        // console.log(res_data[ind]);
+        // console.log(e.transaction);
+        // console.log(e);
+      }
+    }
+  });
+  // console.log("Upgrades!", upgrades);
+  // console.log(res_data[86]);
+  // console.log(res_data[87]);
+  // console.log(res_data[88]);
+  // console.log(data[86].result);
+  // console.log(data[87].result);
+  // console.log(data[88].result);
+  return [txs.length, upgrades];
+}
+
 // reloadDatabase();
 // querySigs();
+
+async function statsTest() {
+  let test_data = [];
+  let final_data = [0, 0];
+  for (let i = 0; i < 1000; i++) {
+    test_data = await queryStatistics();
+    console.log(test_data);
+    final_data[0] += test_data[0];
+    final_data[1] += test_data[1];
+  }
+  console.log(final_data);
+}
+
+statsTest();
