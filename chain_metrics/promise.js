@@ -3,13 +3,16 @@ import {Connection, PublicKey, clusterApiUrl} from "@solana/web3.js";
 import * as fs from "fs";
 import {orderBy} from "natural-orderby";
 
+let bpfPubkey = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+
 const require = createRequire(import.meta.url);
 const promise = require("bluebird"); // or any other Promise/A+ compatible library;
 const initOptions = {
   promiseLib: promise, // overriding the default (ES6 Promise);
 };
 
-let tableName = "data2";
+let con_string = "mainnet-beta";
+let tableName = "mainnet_data";
 const pgp = require("pg-promise")(initOptions);
 
 const cn = {
@@ -60,7 +63,20 @@ async function readDb() {
     });
 }
 
-function getSigs(dstring) {
+async function bulkInsert(signatures) {
+  const cs = new pgp.helpers.ColumnSet(["signature", "blocktime", "slot"], {
+    table: tableName,
+  });
+
+  const conflict =
+    " ON CONFLICT(signature) DO UPDATE SET " +
+    cs.assignColumns({from: "EXCLUDED", skip: ["signature"]});
+
+  const query = pgp.helpers.insert(signatures, cs) + conflict;
+  await db.none(query);
+}
+
+function readSigs(dstring) {
   console.log("reading file", dstring);
   let signatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
 
@@ -81,45 +97,106 @@ function getSigs(dstring) {
   return newSigs;
 }
 
-async function bulkInsert() {
-  let dir_string = "devnet";
-  let filenames = fs.readdirSync(dir_string).reverse();
+async function oldestExistingSig() {
+  console.log("in func");
+  let sig = await db.query(
+    "select signature, blocktime from " +
+      tableName +
+      " where blocktime = (select MIN(blocktime) from " +
+      tableName +
+      ") limit 1;"
+  );
+  return sig[0]["signature"];
+}
 
-  for (var i = 0; i < 1; i++) {
-    let dstring = dir_string + "/" + filenames[i];
+async function youngestExistingSig() {
+  let sig = await db.query(
+    "select signature, blocktime from " +
+      tableName +
+      " where blocktime = (select max(blocktime) from " +
+      tableName +
+      ") limit 1;"
+  );
+  return sig[0]["signature"];
+}
 
-    let signatures = getSigs(dstring);
+async function querySigs(oldest = true) {
+  let connection = new Connection(clusterApiUrl(con_string), "confirmed");
+  let latest_sig;
+  if (oldest) {
+    console.log("in old");
+    latest_sig = await oldestExistingSig();
+  } else {
+    console.log("in young");
+    latest_sig = await youngestExistingSig();
+  }
 
-    const cs = new pgp.helpers.ColumnSet(["signature", "blocktime", "slot"], {
-      table: tableName,
-    });
+  let signatures;
 
-    const conflict =
-      " ON CONFLICT(signature) DO UPDATE SET " +
-      cs.assignColumns({from: "EXCLUDED", skip: ["signature"]});
+  while (true) {
+    try {
+      if (oldest) {
+        signatures = await connection.getConfirmedSignaturesForAddress2(
+          bpfPubkey,
+          {
+            before: latest_sig,
+            limit: 1000,
+          }
+        );
+      } else {
+        signatures = await connection.getConfirmedSignaturesForAddress2(
+          bpfPubkey,
+          {
+            after: latest_sig,
+            limit: 1000,
+          }
+        );
+      }
 
-    const query = pgp.helpers.insert(signatures, cs) + conflict;
-    await db.none(query);
+      // console.log("got", signatures.length);
+      signatures.forEach(
+        (ele, index) =>
+          (signatures[index] = {
+            signature: ele["signature"],
+            blocktime: ele["blockTime"],
+            slot: ele["slot"],
+          })
+      );
+
+      await bulkInsert(signatures);
+      if (oldest) {
+        latest_sig = signatures.at(-1)["signature"];
+        console.log("queryied", signatures.at(-1)["blocktime"]);
+      } else {
+        latest_sig = signatures[0]["signature"];
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    } catch (e) {
+      console.log("failed :(");
+    }
   }
 }
 
-async function allQueries() {
+async function insertAllFiles() {
+  let dir_string = con_string;
+  let filenames = orderBy(fs.readdirSync(dir_string));
+
+  for (var i = 0; i < filenames.length; i++) {
+    let dstring = dir_string + "/" + filenames[i];
+
+    let signatures = readSigs(dstring);
+
+    await bulkInsert(signatures);
+  }
+}
+
+async function reloadDatabase() {
+  // console.log("uh");
   await setupTable();
-  // await addTest();
-  await bulkInsert();
-  await readDb();
+  await insertAllFiles();
+  // await readDb();
   // await convertData();
 }
 
-async function random() {
-  let dstring = "devnet" + "/" + "data9.json";
-
-  let signatures = getSigs(dstring);
-  signatures.forEach((ele, index) => {
-    if (ele["blocktime"] < 1649600716) {
-      console.log(ele);
-    }
-  });
-}
-// allQueries();
-random();
+// reloadDatabase();
+// querySigs();

@@ -48,8 +48,6 @@ async function queryAccount(con_string) {
     console.log("time", date);
     console.log("final length", allBPFs.length);
     fs.writeFileSync(interactionFile, JSON.stringify(allBPFs));
-
-    await new Promise((r) => setTimeout(r, 400));
   }
 
   // allBPFs.map((x) => console.log(x.slot));
