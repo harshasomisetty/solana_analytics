@@ -12,8 +12,19 @@ const initOptions = {
   promiseLib: promise, // overriding the default (ES6 Promise);
 };
 
-let con_string = "mainnet-beta";
-let tableName = "mainnet_data";
+// let endpoint = "mainnet";
+let endpoint = "devnet";
+let con_string;
+let tableName;
+
+if (endpoint === "mainnet") {
+  con_string = "mainnet-beta";
+  tableName = "mainnet_data";
+} else if (endpoint === "devnet") {
+  con_string = "devnet";
+  tableName = "devnet_data";
+}
+
 const pgp = require("pg-promise")(initOptions);
 
 const cn = {
@@ -99,7 +110,6 @@ function readSigs(dstring) {
 }
 
 async function oldestExistingSig() {
-  console.log("in func");
   let sig = await db.query(
     "select signature, blocktime from " +
       tableName +
@@ -125,10 +135,8 @@ async function querySigs(oldest = true) {
   let connection = new Connection(clusterApiUrl(con_string), "confirmed");
   let latest_sig;
   if (oldest) {
-    console.log("in old");
     latest_sig = await oldestExistingSig();
   } else {
-    console.log("in young");
     latest_sig = await youngestExistingSig();
   }
 
@@ -154,7 +162,6 @@ async function querySigs(oldest = true) {
         );
       }
 
-      // console.log("got", signatures.length);
       signatures.forEach(
         (ele, index) =>
           (signatures[index] = {
@@ -192,7 +199,6 @@ async function insertAllFiles() {
 }
 
 async function reloadDatabase() {
-  // console.log("uh");
   await setupTable();
   await insertAllFiles();
   // await readDb();
@@ -202,19 +208,17 @@ async function reloadDatabase() {
 async function sampleTx() {
   // let query = await db.query("select * from devnet_data limit 300", [true]);
   let query = await db.query(
-    "select * from devnet_data tablesample bernoulli(.0005)",
+    "select * from " + tableName + " tablesample bernoulli(.0015)",
     [true]
   );
   let sigs = query.map((e) => e.signature);
-  // console.log(sigs);
   return sigs;
 }
 async function queryStatistics() {
-  let net = "devnet";
-  let url = "https://api." + net + ".solana.com ";
+  let url = "https://api.internal." + con_string + ".solana.com";
 
   let txs = await sampleTx();
-  // console.log("number of tx", txs.length);
+
   let res_data = txs.map((e) => {
     return {
       jsonrpc: "2.0",
@@ -223,11 +227,10 @@ async function queryStatistics() {
       params: [e, "json"],
     };
   });
-  // console.log(data);
 
   let res = await axios.post(url, res_data);
   let data = res.data;
-  // console.log(res.data[0]);
+
   let upgrades = 0;
   data.forEach((e, ind) => {
     let meta = e.result.meta;
@@ -235,6 +238,7 @@ async function queryStatistics() {
       if (
         meta.logMessages.find((element) => {
           if (element.includes("Upgraded program")) {
+            // console.log(e.result.transaction);
             return true;
           }
         })
@@ -249,7 +253,7 @@ async function queryStatistics() {
 async function statsTest() {
   let test_data = [];
 
-  let testFile = "devnet_test_data.json";
+  let testFile = con_string + "_test_data.json";
   for (let i = 0; i < 1000; i++) {
     try {
       test_data = await queryStatistics();
@@ -257,14 +261,59 @@ async function statsTest() {
       let allTestData = JSON.parse(fs.readFileSync(testFile, "utf-8"));
       allTestData = [...allTestData, test_data];
       fs.writeFileSync(testFile, JSON.stringify(allTestData));
-    } catch {
+    } catch (error) {
       console.log("messed up", i);
     }
   }
-  console.log(final_data);
+  // console.log(final_data);
 }
 
-statsTest();
+async function averageTx() {
+  let testFile = con_string + "_test_data.json";
+  let allTestData = JSON.parse(fs.readFileSync(testFile, "utf-8"));
+  let final_data = [0, 0];
+
+  allTestData.forEach((ele) => {
+    final_data[0] += ele[0];
+    final_data[1] += ele[1];
+  });
+
+  let avged_data =
+    final_data[0] / allTestData.length / (final_data[1] / allTestData.length);
+
+  return avged_data;
+}
+
+async function exportData() {
+  console.log("in func");
+  // let upgradeProportion = await averageTx();
+  let upgradeProportion = 529.7876543209876;
+  // console.log(upgradeProportion);
+  let data = await db.query(
+    "select date_trunc('hour', to_timestamp(blocktime)), count(1) from " +
+      tableName +
+      " group by 1 order by date_trunc"
+  );
+
+  let final_data = [];
+
+  data.forEach((ele) => {
+    // if (ele.count == 0) {
+    // console.log(ele);
+    // }
+    final_data.push({
+      date: ele.date_trunc,
+      count: Math.round(parseInt(ele.count) / parseInt(upgradeProportion)),
+    });
+  });
+  console.log(final_data);
+
+  let writeFile = con_string + "_final_statistics.json";
+  fs.writeFileSync(writeFile, JSON.stringify(final_data));
+}
+
+// statsTest();
+exportData();
 
 // reloadDatabase();
 // querySigs();
