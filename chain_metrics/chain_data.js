@@ -1,176 +1,270 @@
+import {createRequire} from "module";
 import {Connection, PublicKey, clusterApiUrl} from "@solana/web3.js";
 import * as fs from "fs";
 import {orderBy} from "natural-orderby";
-
-let file_name = "data";
-
+import request from "request";
+import axios from "axios";
 let bpfPubkey = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
-function dataFile(dir_string) {
-  let filenames = orderBy(fs.readdirSync(dir_string));
-  return parseInt(filenames.at(-1).replace(file_name, "").replace(".json", ""));
+const require = createRequire(import.meta.url);
+const promise = require("bluebird"); // or any other Promise/A+ compatible library;
+const initOptions = {
+  promiseLib: promise, // overriding the default (ES6 Promise);
+};
+
+let con_string = "mainnet-beta";
+let tableName = "mainnet_data";
+const pgp = require("pg-promise")(initOptions);
+
+const cn = {
+  host: "localhost",
+  port: "5432",
+  user: "harshasomisetty",
+  database: "chain_metrics",
+  password: "password",
+  allowExitOnIdle: true,
+};
+
+const db = pgp(cn);
+
+async function setupTable() {
+  await db.any("DROP TABLE IF EXISTS " + tableName, [true]);
+  console.log("dropped table");
+
+  await db.query(
+    "CREATE TABLE " +
+      tableName +
+      " (signature TEXT PRIMARY KEY, blockTime BIGINT, slot INT)",
+    [true]
+  );
 }
 
-function latestDataFile(dir_string) {
-  let file_num = dataFile(dir_string);
-  return dir_string + "/" + file_name + file_num + ".json";
+async function convertData() {
+  db.query(
+    "ALTER TABLE " +
+      tableName +
+      " ALTER COLUMN blocktime TYPE TIMESTAMP using to_timestamp(blocktime)",
+    [true]
+  )
+    .then((data) => {
+      console.log("DATA:", data); // print data;
+    })
+    .catch((error) => {
+      console.log("ERROR:", error); // print the error;
+    });
 }
 
-function newDataFile(dir_string) {
-  let file_num = dataFile(dir_string) + 1;
-  return dir_string + "/" + file_name + file_num + ".json";
+async function readDb() {
+  db.query("select count(*) from " + tableName, [true])
+    .then((data) => {
+      console.log("DATA:", data); // print data;
+    })
+    .catch((error) => {
+      console.log("ERROR:", error); // print the error;
+    });
 }
 
-async function queryAccount(con_string) {
+async function bulkInsert(signatures) {
+  const cs = new pgp.helpers.ColumnSet(["signature", "blocktime", "slot"], {
+    table: tableName,
+  });
+
+  const conflict =
+    " ON CONFLICT(signature) DO UPDATE SET " +
+    cs.assignColumns({from: "EXCLUDED", skip: ["signature"]});
+
+  const query = pgp.helpers.insert(signatures, cs) + conflict;
+  await db.none(query);
+}
+
+function readSigs(dstring) {
+  console.log("reading file", dstring);
+  let signatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
+
+  signatures.forEach(
+    (ele, index) =>
+      (signatures[index] = {
+        signature: ele["signature"],
+        blocktime: ele["blockTime"],
+        slot: ele["slot"],
+      })
+  );
+  // console.log("stuff", signatures[0]);
+  console.log("first", signatures.length);
+
+  let newSigs = [
+    ...new Map(signatures.map((item) => [item["signature"], item])).values(),
+  ];
+  return newSigs;
+}
+
+async function oldestExistingSig() {
+  console.log("in func");
+  let sig = await db.query(
+    "select signature, blocktime from " +
+      tableName +
+      " where blocktime = (select MIN(blocktime) from " +
+      tableName +
+      ") limit 1;"
+  );
+  return sig[0]["signature"];
+}
+
+async function youngestExistingSig() {
+  let sig = await db.query(
+    "select signature, blocktime from " +
+      tableName +
+      " where blocktime = (select max(blocktime) from " +
+      tableName +
+      ") limit 1;"
+  );
+  return sig[0]["signature"];
+}
+
+async function querySigs(oldest = true) {
   let connection = new Connection(clusterApiUrl(con_string), "confirmed");
-
-  let interactionFile = latestDataFile(con_string);
+  let latest_sig;
+  if (oldest) {
+    console.log("in old");
+    latest_sig = await oldestExistingSig();
+  } else {
+    console.log("in young");
+    latest_sig = await youngestExistingSig();
+  }
 
   let signatures;
 
-  for (let i = 0; i < 3000; i++) {
-    let allBPFs = JSON.parse(fs.readFileSync(interactionFile, "utf-8"));
-
-    if (allBPFs.length > 0) {
-      signatures = await connection.getConfirmedSignaturesForAddress2(
-        bpfPubkey,
-        {before: allBPFs.at(-1).signature, limit: 1000}
-      );
-    } else {
-      signatures = await connection.getConfirmedSignaturesForAddress2(
-        bpfPubkey,
-        {limit: 1000}
-      );
-    }
-    allBPFs = allBPFs.concat(signatures);
-    console.log("iter", i, signatures[0]);
-    let date = new Date(signatures[0]["blockTime"] * 1000);
-    console.log("time", date);
-    console.log("final length", allBPFs.length);
-    fs.writeFileSync(interactionFile, JSON.stringify(allBPFs));
-  }
-
-  // allBPFs.map((x) => console.log(x.slot));
-}
-
-async function transferFile(con_string) {
-  let interactionFile = latestDataFile(con_string);
-  let interactionFile1 = newDataFile(con_string);
-
-  let allBPFs = JSON.parse(fs.readFileSync(interactionFile, "utf-8"));
-  let lastRecord = [allBPFs.at(-1)];
-  // fs.writeFileSync(interactionFile1,);
-  // fs.closeSync(fs.openSync(interactionFile1, "a"));
-  fs.writeFileSync(interactionFile1, JSON.stringify(lastRecord));
-  console.log("Starting new file");
-}
-
-function dateFormat(date) {
-  console.log("in method", date, date.getTimezoneOffset());
-  let year = date.getFullYear();
-  let month = (date.getMonth() + 1).toString().padStart(2, "0");
-  let day = date.getDate().toString().padStart(2, "0");
-  return "devnet2/" + month + day + year + ".json";
-}
-
-function printStartEndDf(signatures) {
-  if (signatures.length > 0) {
-    let date1 = new Date(signatures[0]["blockTime"] * 1000);
-    let date2 = new Date(signatures.at(-1)["blockTime"] * 1000);
-
-    console.log("first date", date1, date1.getTime());
-    console.log("second date", date2, date2.getTime());
-    console.log("Length of df", signatures.length);
-  } else {
-    console.log("EMPTY DF");
-  }
-}
-
-function seperateFiles(dir_string) {
-  let filenames = orderBy(fs.readdirSync(dir_string));
-  for (const rawname of filenames.slice(0, 2)) {
-    let name = "devnet/" + rawname;
-    let signatures = JSON.parse(fs.readFileSync(name, "utf-8"));
-
-    let latestDate = new Date(signatures[0]["blockTime"] * 1000);
-
-    let latestDay = new Date(
-      latestDate.getFullYear(),
-      latestDate.getMonth(),
-      latestDate.getDate()
-    );
-
-    console.log("latest date start", latestDate, latestDate.getTime());
-
-    console.log("latest day start", latestDay, latestDay.getTime());
-
-    let dstring = dateFormat(latestDay);
-    console.log("latest file", dstring);
-    if (!fs.existsSync(dstring)) {
-      console.log("not exists");
-      fs.writeFileSync(dstring, JSON.stringify([]));
-    } else {
-      console.log("already exists!!");
-    }
-
-    let daySignatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
-    printStartEndDf(daySignatures);
-    let startIndex = 0;
-
-    console.log("\n\nSTARTING LOOP\n\n");
-    for (let i = 0; i < signatures.length; i++) {
-      let sig = signatures[i];
-
-      let curDate = new Date(sig["blockTime"] * 1000);
-      if (curDate.getTime() < latestDay.getTime()) {
-        console.log("breaking", curDate);
-        console.log("append these:", startIndex, i);
-        daySignatures = daySignatures.concat(signatures.slice(startIndex, i));
-        fs.writeFileSync(dstring, JSON.stringify(daySignatures));
-
-        latestDay = new Date(
-          curDate.getFullYear(),
-          curDate.getMonth(),
-          curDate.getDate()
+  while (true) {
+    try {
+      if (oldest) {
+        signatures = await connection.getConfirmedSignaturesForAddress2(
+          bpfPubkey,
+          {
+            before: latest_sig,
+            limit: 1000,
+          }
         );
+      } else {
+        signatures = await connection.getConfirmedSignaturesForAddress2(
+          bpfPubkey,
+          {
+            after: latest_sig,
+            limit: 1000,
+          }
+        );
+      }
 
-        dstring = dateFormat(latestDay);
-        if (!fs.existsSync(dstring)) {
-          console.log("not exists");
-          fs.writeFileSync(dstring, JSON.stringify([]));
-        }
+      // console.log("got", signatures.length);
+      signatures.forEach(
+        (ele, index) =>
+          (signatures[index] = {
+            signature: ele["signature"],
+            blocktime: ele["blockTime"],
+            slot: ele["slot"],
+          })
+      );
 
-        printStartEndDf(daySignatures);
+      await bulkInsert(signatures);
+      if (oldest) {
+        latest_sig = signatures.at(-1)["signature"];
+        console.log("queryied", signatures.at(-1)["blocktime"]);
+      } else {
+        latest_sig = signatures[0]["signature"];
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    } catch (e) {
+      console.log("failed :(");
+    }
+  }
+}
 
-        daySignatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
-        startIndex = i;
-        console.log("new day, dstring", latestDay, dstring, "***\n\n\n");
+async function insertAllFiles() {
+  let dir_string = con_string;
+  let filenames = orderBy(fs.readdirSync(dir_string));
+
+  for (var i = 0; i < filenames.length; i++) {
+    let dstring = dir_string + "/" + filenames[i];
+
+    let signatures = readSigs(dstring);
+
+    await bulkInsert(signatures);
+  }
+}
+
+async function reloadDatabase() {
+  // console.log("uh");
+  await setupTable();
+  await insertAllFiles();
+  // await readDb();
+  // await convertData();
+}
+
+async function sampleTx() {
+  // let query = await db.query("select * from devnet_data limit 300", [true]);
+  let query = await db.query(
+    "select * from devnet_data tablesample bernoulli(.0005)",
+    [true]
+  );
+  let sigs = query.map((e) => e.signature);
+  // console.log(sigs);
+  return sigs;
+}
+async function queryStatistics() {
+  let net = "devnet";
+  let url = "https://api." + net + ".solana.com ";
+
+  let txs = await sampleTx();
+  // console.log("number of tx", txs.length);
+  let res_data = txs.map((e) => {
+    return {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getTransaction",
+      params: [e, "json"],
+    };
+  });
+  // console.log(data);
+
+  let res = await axios.post(url, res_data);
+  let data = res.data;
+  // console.log(res.data[0]);
+  let upgrades = 0;
+  data.forEach((e, ind) => {
+    let meta = e.result.meta;
+    if (meta.hasOwnProperty("logMessages") && meta.logMessages.length > 0) {
+      if (
+        meta.logMessages.find((element) => {
+          if (element.includes("Upgraded program")) {
+            return true;
+          }
+        })
+      ) {
+        upgrades += 1;
       }
     }
+  });
+  return [txs.length, upgrades];
+}
 
-    console.log("END OF FOR LOOP");
-    daySignatures = daySignatures.concat(signatures.slice(startIndex));
-    fs.writeFileSync(dstring, JSON.stringify(daySignatures));
+async function statsTest() {
+  let test_data = [];
 
-    console.log("NEW FILE", latestDay);
+  let testFile = "devnet_test_data.json";
+  for (let i = 0; i < 1000; i++) {
+    try {
+      test_data = await queryStatistics();
+      console.log(test_data);
+      let allTestData = JSON.parse(fs.readFileSync(testFile, "utf-8"));
+      allTestData = [...allTestData, test_data];
+      fs.writeFileSync(testFile, JSON.stringify(allTestData));
+    } catch {
+      console.log("messed up", i);
+    }
   }
+  console.log(final_data);
 }
 
-async function readFile(dir_string) {
-  let filenames = fs.readdirSync(dir_string).reverse();
-  let dstring = dir_string + "/" + filenames[5];
-  console.log("reading file", dstring);
-  let signatures = JSON.parse(fs.readFileSync(dstring, "utf-8"));
-  printStartEndDf(signatures);
-}
+statsTest();
 
-async function totalFunction() {
-  let con_string = "devnet";
-
-  seperateFiles(con_string);
-  // readFile("devnet2");
-  // transferFile(con_string);
-  // queryAccount(con_string);
-}
-
-totalFunction();
+// reloadDatabase();
+// querySigs();
